@@ -4,7 +4,8 @@ from torch.nn import functional as F
 from PIL import Image
 import numpy as np
 import cv2
-from huggingface_hub import hf_hub_url, cached_download
+from huggingface_hub import hf_hub_url
+from huggingface_hub import hf_hub_download
 
 from .rrdbnet_arch import RRDBNet
 from .utils import pad_reflect, split_image_into_overlapping_patches, stich_together, \
@@ -38,14 +39,22 @@ class RealESRGAN:
         
     def load_weights(self, model_path, download=True):
         if not os.path.exists(model_path) and download:
-            assert self.scale in [2,4,8], 'You can download models only with scales: 2, 4, 8'
+            assert self.scale in [2, 4, 8], 'You can download models only with scales: 2, 4, 8'
             config = HF_MODELS[self.scale]
             cache_dir = os.path.dirname(model_path)
             local_filename = os.path.basename(model_path)
-            config_file_url = hf_hub_url(repo_id=config['repo_id'], filename=config['filename'])
-            cached_download(config_file_url, cache_dir=cache_dir, force_filename=local_filename)
-            print('Weights downloaded to:', os.path.join(cache_dir, local_filename))
-        
+            
+            # Use hf_hub_download directly
+            downloaded_model_path = hf_hub_download(
+                repo_id=config['repo_id'],
+                filename=config['filename'],
+                cache_dir=cache_dir,
+                force_filename=local_filename
+            )
+            print('Weights downloaded to:', downloaded_model_path)
+            
+            model_path = downloaded_model_path
+
         loadnet = torch.load(model_path)
         if 'params' in loadnet:
             self.model.load_state_dict(loadnet['params'], strict=True)
@@ -55,7 +64,7 @@ class RealESRGAN:
             self.model.load_state_dict(loadnet, strict=True)
         self.model.eval()
         self.model.to(self.device)
-        
+
     @torch.cuda.amp.autocast()
     def predict(self, lr_image, batch_size=4, patches_size=192,
                 padding=24, pad_size=15):
